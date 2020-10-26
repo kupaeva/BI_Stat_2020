@@ -1,0 +1,415 @@
+---
+title: "Проект №1 “Насколько стара мидия”"
+author: "Kupaeva DM"
+date: "26.10.2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if(!require(tidyverse)){
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+library(tidyverse)
+
+if(!require(ggplot2)){
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+library(ggplot2)
+```
+
+## 1. Open data and prepare to analysis
+#### Open data
+
+This function open and compile data from .csv files, which locate in your directory. If your data packed to zip archive, the function will unpack it.
+
+
+
+```{r, message=FALSE}
+processing_data <- function(pwd){
+  if(!require(tidyverse)){
+    install.packages("tidyverse")
+    library(tidyverse)
+  }
+  library(tidyverse)
+  
+  setwd(pwd)
+  
+  if (file.exists("./Data.zip")){
+    unzip("./Data.zip")
+    setwd("./Data")
+  }
+  
+  file_list <- list.files(path = getwd())
+  dataset <- data.frame()
+  
+  for (i in 1:length(file_list)) {
+    temp_data <- read.csv(file_list[i])
+    names(temp_data) <-c('Rings', 'Sex', 'Length', 'Diameter',
+                         'Height', 'Whole_weight', 'Shucked_weight', 'Viscera_weight', 
+                         'Shell_weight')
+    dataset <- rbind(dataset, temp_data) 
+  }
+  return(dataset)
+} 
+
+```
+
+#### Enter the path to the data folder
+
+
+```{r, message=FALSE}
+
+dataset <- processing_data('D:/YandexDisk/ИБ/R/project1')
+str(dataset)
+
+
+```
+
+#### Prepare data to analysis: correct errors, remove NA, variable type's management
+
+* This part of project correct wrong labels for factor variable "Sex": it replaces word gender and counts to labels 1, 2, 3. Because "Sex" has only 3 labels, I can find any exceptions.
+It ignored any incorrect data in other variables ("nine" and other) because I cannot find all exceptions. 
+
+* I applied type conversion to all columns. During this operation I lost all not-numerous data, they were replaced to NA. NA was removed from this dataset. They are a minor part of data, and I cannot use it in my analysis. Removing this data make my work more simple. Saving this data doesn't affect the final result. 
+Other ways to resolve a problem with NA: ignore it, replace it to zero or average value of a variable. But replacement NA to zero or average value change data distribution and maybe a reason for the incorrect analysis. 
+
+* Last action in this step - conversion "Sex" to factor with 3 levels.
+
+
+
+```{r, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+dataset$Sex[dataset$Sex == "male"] <- 1
+dataset$Sex[dataset$Sex == "female"] <- 2
+dataset$Sex[dataset$Sex == "uvenil"] <- 3
+dataset$Sex[dataset$Sex == "one"] <- 1
+dataset$Sex[dataset$Sex == "two"] <- 2
+dataset$Sex[dataset$Sex == "three"] <- 3
+dataset <- filter(dataset, (Sex %in% c(1,2,3))) 
+
+dataset <- mutate_each(dataset, funs(as.numeric(.))) #каждую колонку умножить на 2
+dataset <- na.omit(dataset)
+dataset$Sex <- factor(dataset$Sex, levels = c(1, 2, 3), labels = c("male", "female", "uvenil"))
+str(dataset)
+
+```
+ 
+ ***
+
+## 2. Explore data analysis
+
+#### Visualise our data
+In this step I visualise all variables except "Sex", because "Sex" is factor and do not have outliers.
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+ggplot(stack(dataset), aes(x = ind, y = values), labeller(x = a)) +
+  geom_boxplot() +
+  facet_wrap(~ind, nrow = 2, scales = "free") +
+  theme_bw()+
+  xlab("Variables")+
+  ylab("")+
+  ggtitle("Data distribituon and outliers")
+
+```
+
+#### Remove outliers in the base of boxplot statistic
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+dataset_outliers = filter(dataset, !dataset$Length %in% boxplot.stats(dataset$Length)$out &
+                          !dataset$Diameter %in% boxplot.stats(dataset$Diameter)$out &
+                          !dataset$Height %in% boxplot.stats(dataset$Height)$out &
+                          !dataset$Whole_weight %in% boxplot.stats(dataset$Whole_weight)$out &
+                          !dataset$Shucked_weight %in% boxplot.stats(dataset$Shucked_weight)$out &
+                          !dataset$Viscera_weight %in% boxplot.stats(dataset$Viscera_weight)$out &
+                          !dataset$Shell_weight%in% boxplot.stats(dataset$Shell_weight)$out &
+                            !dataset$Rings %in% boxplot.stats(dataset$Rings)$out)
+
+```
+
+#### Visualize pairwise correlations to find relationships between variables 
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+
+pairs(dataset_outliers, labels = c("Rings", "Sex", "Length", "Diameter", 'Height', 'Whole weight', 
+                                              'Shucked weight', 'Viscera weight', 'Shell weight'),
+      main = "Correlation between variables", cex.labels = 0.5)
+
+```
+
+
+In this plot, we can see a distinct correlation between Length and Diameter, and less unambiguous correlations between other size parameters (size and weight). And I cannot see any correlation between "Rings" and other parameters, and "Sex" and other parameters. 
+But this method provides only visual information about the distribution of data and do not provide information about statistical support this correlation, this information needs additional research.  
+
+
+***
+
+## 3. Some parameters of our data
+
+#### The mean and standard deviation of Length for different sexes of molluscs 
+
+
+```{r, warning=FALSE, message=FALSE}
+mean_ <- dataset_outliers %>%
+  group_by(Sex) %>%
+  summarise(mean(Length))
+
+sd_ = dataset %>%
+  group_by(Sex) %>%
+  summarise(sd(Length))
+
+mean_ = cbind(mean_, sd_[2])
+mean_
+```
+
+
+#### Percent of molluscs with Height less than 0.165:
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+percent_small_height <- nrow(filter(dataset_outliers, dataset_outliers$Height <= 0.1650)) / nrow(dataset_outliers) * 100
+percent_small_height
+```
+
+
+#### Value of Length, which is most than 92% of all values:
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+quantile(dataset_outliers$Length, probs = 0.92)
+```
+
+
+#### Z-standartisation for Length:
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+dataset_outliers$Length_z_scores <- scale(dataset_outliers$Length)
+
+```
+
+
+#### Compare of diameter molluscs with 5 and 15 rings:
+
+* Create a subset of data, which we compare now:
+
+
+
+```{r, warning=FALSE}
+
+rings_5_15 <- dataset_outliers %>%  filter(Rings == 5 | Rings == 15) %>% select(Rings, Diameter)
+
+```
+
+* Visualise our data:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%"}
+
+ggplot(rings_5_15, aes(x = factor(Rings), y = Diameter)) +
+  geom_boxplot() +
+  theme_bw()+
+  xlab("Numeber of rings")+
+  ylab("Diameter") +
+  ggtitle("Diameter distribution depending on the number of rings")
+
+ggplot(rings_5_15, aes(x = Diameter, color = factor(Rings))) +
+  geom_histogram(fill = "white", position="identity") +
+  theme_bw() +
+  xlab("Diameter of mollusc") +
+  ylab("Number of samples") +
+  scale_color_discrete(name = "Number of rings") +
+  ggtitle("Diameter distribution depending on the number of rings")
+
+```
+
+
+* Check distribution our data:
+
+
+
+```{r, warning=FALSE, message=FALSE, out.width="50%"}
+
+shapiro.test(rings_5_15$Diameter)
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+qqnorm(y = rings_5_15$Diameter, main = "Q-Q Plot for Diameter of Molluscs with 5 or 15 Rings")
+
+```
+
+Based on the Shapiro test (p-value = 2.928e-10 < 0.05), we reject the null hypothesis that our data is normally distributed. Data visualization using a qq-plot confirms that the data is not well distributed. 
+By this reason, I will use a non-parametric test Wilcox for 2 independent samples.
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+
+wilcox.test(rings_5_15$Diameter~rings_5_15$Rings) 
+
+```
+
+This test with p-value < 2.2e-16 allows us to reject the null hypothesis that the shell diameter is not related to the number of rings and accept alternative hypothesis about different diameter in molluscs with different number of rings. 
+
+
+#### Find interaction between diameter and whole weight
+
+* Visualise our parameter:
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+
+ggplot(dataset_outliers, aes(x = Diameter, y = Whole_weight)) +
+  geom_point(size = 0.01) +
+  theme_bw() +
+  xlab("Diametr") +
+  ylab("Whole weight") +
+  ggtitle("Distribution of diameter of depending on the Whole weight of the molluscs")
+
+```
+
+In this plot I see non-linear correlation between parameters. For confirming this hypothesis I will use correlation test. 
+
+* Choosing a test depend of distribution of data.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%"}
+qqnorm(dataset$Diameter, main = "Q-Q Plot for Diameter of Molluscs")
+qqnorm(dataset$Whole_weight, main = "Q-Q Plot for whole weight of Molluscs")
+shapiro.test(dataset$Diameter)
+```
+
+```{r, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+shapiro.test(dataset$Diameter)
+shapiro.test(dataset$Whole_weight) 
+
+```
+
+Shapiro tests and qq-plots show that this data distributed not normal (p-value < 2.2e-16). By this reason I will use non-paramentric correlation Spearman test. 
+
+```{r, warning=FALSE, message=FALSE}
+cor.test(dataset$Whole_weight, dataset$Diameter, method = "spearman")
+```
+
+Spearman test shows that the whole weight and diameter have a positive correlation, and this correlation has a high level of the p-value (p-value < 2.2e-16). 
+However, correlation is not a basis for claiming that the variables are related. This correlation can have a physical meaning: for example, with an increase in the diameter of the shell, its volume also changes, and therefore the weight of the mollusc increases.
+In order to assert with great reason about the relationship of variables, we need to build a model of the interaction of variables. However, the variables do not interact linearly, and the variance of the residuals is not homoscedastic. For this reason, I cannot answer the question about the interaction of variables unambiguously now.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+
+ggplot(dataset_outliers, aes(x = Diameter, y = Whole_weight)) +
+  geom_point(size = 0.01) +
+  geom_smooth()+
+  geom_smooth(method = lm, color ="red")+
+  theme_bw() +
+  xlab("Diameter") +
+  ylab("Whole weight") +
+  ggtitle("Lineal and non-linear smooth of interaction Diameter and whole weight of molluscs")+
+  scale_y_continuous(limits = c(0, 2))
+
+```
+***
+## 4. Test my hypotheses about this data
+
+#### Interaction Diameter and Length
+
+This hypothesis I found with help of pair correlation plot in the step "Explore data analysis". 
+Visualised data:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+
+ggplot(dataset_outliers, aes(x = Diameter, y = Length)) +
+  geom_point(size = 0.01) +
+  geom_smooth()+
+  theme_bw() +
+  xlab("Diameter") +
+  ylab("Length") +
+  ggtitle("The dependence of the Diameter of the mollusk on its Length")
+
+``` 
+
+In this plot we see clear correlation, geom_smooth have linear shape, discrepancy distributed evenly. By this reason I can use lineal regression for this data:
+
+```{r, warning=FALSE, message=FALSE}
+
+model_Length_Diameter <- lm(Length ~ Diameter, dataset_outliers)
+summary(model_Length_Diameter)
+```
+
+Usage of this model shows that interaction Diameter and Length have significant value, and out model can predict value of Length using Diameter value. 
+
+#### Predict whole weight
+
+In the previous step I try to found interaction between whole weight and Diameter. I found correlation, but I cannot found model, which desribe their interaction,because theire it is not-linear model. 
+However, I think that I will find linear interaction between whole weight and volume of molluscs. I cannot fount volume exactly, but I can found estimate volume, an approximation to a rectangle. For it I will multiply the length, diameter (I think that this parameter of mollusc close to wigth) and height.
+
+```{r, warning=FALSE, message=FALSE}
+
+dataset_outliers$Volume <- dataset_outliers$Diameter*dataset_outliers$Length*dataset_outliers$Height
+```
+
+And I visualise distribution whole weight in depends with Volume:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+
+ggplot(dataset_outliers, aes(x = Whole_weight, y = Volume)) +
+  geom_point(size = 0.01) +
+  geom_smooth()+
+  theme_bw() +
+  xlab("Whole weight") +
+  ylab("Volume") +
+  ggtitle("Distribution whole weight in depends with Volume")
+```
+
+In the plot I see lineal distribution, and homoscedastic distribution of remnants. By this reason I can use lineal regression:
+
+```{r, warning=FALSE, message=FALSE}
+
+model_whole_wight_volume <- lm(Whole_weight ~ Volume, dataset_outliers)
+summary(model_whole_wight_volume)
+```
+
+Usage of this model shows that interaction whole weigh and Volume have significant value.  
+
+#### Significant dependenses between shell weight and maturity
+
+And I notified in pair correlation plot from 2 step that weight of Shell in yuvenile less than in female and male. And here I check it.
+First, I create new variable Mature, wich is a copy of variable Sex. After this I change factor levels: I do nothing with level 'uvenile', and 'female' and 'male' rename to 'adult'. 
+After this I test hypotesis that weight Shell independ of mature. This hypotisys is rejected. 
+```{r, warning=FALSE, message=FALSE}
+
+dataset_outliers$Maturity <- dataset_outliers$Sex
+levels(dataset_outliers$Maturity) <- c("adult", "adult", "uvenile")
+wilcox.test(dataset_outliers$Shell_weight~dataset_outliers$Maturity) 
+```
+
+Wilcox test support alternative hypotisys about correlation between mature and Shell weigth. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
+
+ggplot(dataset_outliers, aes(x = Shell_weight, color = Maturity)) +
+  geom_histogram(fill = "white", position="identity") +
+  theme_bw() +
+  xlab(" ") +
+  ylab(" ") +
+  scale_color_discrete(name = " ") +
+  ggtitle(" ")
+```
+
