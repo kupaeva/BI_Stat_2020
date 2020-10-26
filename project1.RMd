@@ -1,6 +1,5 @@
 ---
 title: "Проект №1 “Насколько стара мидия”"
-author: "Kupaeva DM"
 date: "26.10.2020"
 output: html_document
 ---
