@@ -23,6 +23,7 @@ library(ggplot2)
 ## 1. Open data and prepare to analysis
 #### Open data
 
+
 This function open and compile data from .csv files, which locate in your directory. If your data packed to zip archive, the function will unpack it.
 
 
