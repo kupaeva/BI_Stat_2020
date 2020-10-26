@@ -1,6 +1,5 @@
 ---
 title: "Проект №1 “Насколько стара мидия”"
-author: "Kupaeva DM"
 date: "26.10.2020"
 output: html_document
 ---
@@ -63,8 +62,6 @@ processing_data <- function(pwd){
 ```{r, message=FALSE}
 
 dataset <- processing_data('D:/YandexDisk/ИБ/R/project1')
-str(dataset)
-
 
 ```
 
@@ -94,7 +91,6 @@ dataset <- filter(dataset, (Sex %in% c(1,2,3)))
 dataset <- mutate_each(dataset, funs(as.numeric(.))) #каждую колонку умножить на 2
 dataset <- na.omit(dataset)
 dataset$Sex <- factor(dataset$Sex, levels = c(1, 2, 3), labels = c("male", "female", "uvenil"))
-str(dataset)
 
 ```
  
@@ -245,7 +241,7 @@ ggplot(rings_5_15, aes(x = Diameter, color = factor(Rings))) +
 
 ```{r, warning=FALSE, message=FALSE, out.width="50%"}
 
-shapiro.test(rings_5_15$Diameter)
+shapiro_diameter <- shapiro.test(rings_5_15$Diameter)
 
 ```
 
@@ -262,7 +258,7 @@ By this reason, I will use a non-parametric test Wilcox for 2 independent sample
 ```{r, warning=FALSE, message=FALSE}
 
 
-wilcox.test(rings_5_15$Diameter~rings_5_15$Rings) 
+wilcox_diameter_rings <- wilcox.test(rings_5_15$Diameter~rings_5_15$Rings) 
 
 ```
 
@@ -293,22 +289,21 @@ In this plot I see non-linear correlation between parameters. For confirming thi
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, out.width="50%"}
 qqnorm(dataset$Diameter, main = "Q-Q Plot for Diameter of Molluscs")
 qqnorm(dataset$Whole_weight, main = "Q-Q Plot for whole weight of Molluscs")
-shapiro.test(dataset$Diameter)
 ```
 
 ```{r, warning=FALSE, message=FALSE, out.width="50%", fig.align = 'center'}
-shapiro.test(dataset$Diameter)
-shapiro.test(dataset$Whole_weight) 
+shapiro_diameter <- shapiro.test(dataset$Diameter)
+shapiro_whole_weight <- shapiro.test(dataset$Whole_weight) 
 
 ```
 
 Shapiro tests and qq-plots show that this data distributed not normal (p-value < 2.2e-16). By this reason I will use non-paramentric correlation Spearman test. 
 
 ```{r, warning=FALSE, message=FALSE}
-cor.test(dataset$Whole_weight, dataset$Diameter, method = "spearman")
+speatman_diameter_whole_weight <- cor.test(dataset$Whole_weight, dataset$Diameter, method = "spearman")
 ```
 
-Spearman test shows that the whole weight and diameter have a positive correlation, and this correlation has a high level of the p-value (p-value < 2.2e-16). 
+Spearman test shows that the whole weight and diameter have a positive correlation, and this correlation has a high level of the p-value (p-value < 2.2e-16), this correlation is positive( rho = 0.9714771 ). 
 However, correlation is not a basis for claiming that the variables are related. This correlation can have a physical meaning: for example, with an increase in the diameter of the shell, its volume also changes, and therefore the weight of the mollusc increases.
 In order to assert with great reason about the relationship of variables, we need to build a model of the interaction of variables. However, the variables do not interact linearly, and the variance of the residuals is not homoscedastic. For this reason, I cannot answer the question about the interaction of variables unambiguously now.
 
@@ -350,10 +345,10 @@ In this plot we see clear correlation, geom_smooth have linear shape, discrepanc
 ```{r, warning=FALSE, message=FALSE}
 
 model_Length_Diameter <- lm(Length ~ Diameter, dataset_outliers)
-summary(model_Length_Diameter)
+
 ```
 
-Usage of this model shows that interaction Diameter and Length have significant value, and out model can predict value of Length using Diameter value. 
+Usage of this model shows that interaction Diameter and Length have significant value, and out model can predict value of Length using Diameter value (p-value of F-statistic this model < 2.2e-16, Pr(>|t|) of coefficient for diameter <2e-16)
 
 #### Predict whole weight
 
@@ -383,21 +378,21 @@ In the plot I see lineal distribution, and homoscedastic distribution of remnant
 ```{r, warning=FALSE, message=FALSE}
 
 model_whole_wight_volume <- lm(Whole_weight ~ Volume, dataset_outliers)
-summary(model_whole_wight_volume)
 ```
 
-Usage of this model shows that interaction whole weigh and Volume have significant value.  
+Usage of this model shows that interaction whole weigh and Volume have significant value: p-value: < 2.2e-16 for F-statistic for this model, Pr(>|t|) for coefficient for Volume <2e-16.   
 
 #### Significant dependenses between shell weight and maturity
 
 And I notified in pair correlation plot from 2 step that weight of Shell in yuvenile less than in female and male. And here I check it.
 First, I create new variable Mature, wich is a copy of variable Sex. After this I change factor levels: I do nothing with level 'uvenile', and 'female' and 'male' rename to 'adult'. 
-After this I test hypotesis that weight Shell independ of mature. This hypotisys is rejected. 
+After this I test hypotesis that weight Shell independ of mature. This hypotisys is rejected (p-value < 2.2e-16). 
+
 ```{r, warning=FALSE, message=FALSE}
 
 dataset_outliers$Maturity <- dataset_outliers$Sex
 levels(dataset_outliers$Maturity) <- c("adult", "adult", "uvenile")
-wilcox.test(dataset_outliers$Shell_weight~dataset_outliers$Maturity) 
+wilcow_Shell_weight <- wilcox.test(dataset_outliers$Shell_weight~dataset_outliers$Maturity) 
 ```
 
 Wilcox test support alternative hypotisys about correlation between mature and Shell weigth. 
