@@ -1,0 +1,234 @@
+---
+title: "Проект №3"
+date: "30.11.2020"
+output: html_document
+---
+
+```{r setup, include=T, message=F, warning=F}
+require("readxl")
+require(dplyr)
+require(ggplot2)
+require(tidyverse)
+require(skimr)
+require(car)
+require(ggridges)
+require(vegan)
+require("scatterplot3d")
+require(limma)
+require(Glimma)
+require(edgeR)
+require(RColorBrewer)
+```
+
+## Data explore
+
+In this projet I will work with data of expression of mice proteins ( https://archive.ics.uci.edu/ml/datasets/Mice+Protein+Expression# ). 
+First that i will do - meet with data. 
+
+
+```{r}
+data = read_excel('D:/YandexDisk/IB/R/project3/Data_Cortex_Nuclear.xls')
+head(data)
+
+data$Genotype <-  as.factor(data$Genotype)
+data$Treatment <-  as.factor(data$Treatment)
+data$Behavior <-  as.factor(data$Behavior)
+data$class <-  as.factor(data$class)
+
+```
+
+First column of data contain mouse ID and  number of probe from this mouse. The last 4 columns contain: "Genotype" - type of mouse (control or trisomic), Treatment - type of treatment, behavior -  stimulated to learn (context-shock) or not (shock-context). All this parameters acuumilate in column "class".
+
+For understanding count of mouse in experiment I parce column "MouseID" to Id_prefix and sample:
+
+```{r}
+data_pars <- data %>% 
+  separate(MouseID, into = c("Id_prefix", "sample"), convert = TRUE, remove = F)
+mouse_count <- length(unique(data_pars$Id_prefix))
+mouse_count
+```
+
+According to it, this dataset contain information about 72 unique mouses. 
+Chech distribution observations by groupes:
+
+```{r}
+
+review <- partition(skim(data_pars))
+review$factor
+review$character
+
+```
+
+Groupes insignificantly inballansed: the number of control mice exceeds the number mice with trisomy by 4,  differences between mice in different classes is 1 mouse. 
+
+
+```{r}
+
+data_pars %>% summarise_all(~ sum(is.na(.)))
+
+
+data_full <- data_pars[c(1:71, 74, 76, 80:84)]
+data_full <- na.omit(data_full)
+
+data_full %>% summarise_all(~ sum(is.na(.)))
+
+
+review_full <- partition(skim(data_full))
+review_full$character
+review_full$factor
+
+
+```
+I quantified the amount of HA in each column, and found that most of the columns had negligible numbers. However, there were a lot of them in the values of proteins: H3MeK4_N, EGR1_N, H3AcK18_N, pCFOS_N, BCL2_N, BAD_N. I removed the columns corresponding to them.
+After that, I deleted all the columns containing the missing data. After that, we have 1047 observations of 70 mice left. The groups remained unbalanced.
+
+
+## BDNS_N 
+
+In this part I will check differences between level of expression BDNS_N in different classes of mice.  
+First, I estimete it with help of plot:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+ggplot(data_full, aes(x = class, y = BDNF_N)) +
+  geom_boxplot() +
+  theme_bw()+
+  xlab("class")+
+  ylab("BDNS_N") +
+  ggtitle("Dependence of the BDNF_N level on the class ")
+
+```
+
+According it, class c-SC-m stands out from the crowd, other classes have not so bright differences, but it need formal evidence. 
+
+Check distribution of data:
+```{r}
+shapiro.test(data_full$BDNF_N)
+leveneTest(data_full$BDNF_N, data_full$class)
+
+```
+
+According shapiro test, data distributed not normally (W = 0.99068, p-value = 3.444e-06), variance are not homogeneity (according levene Test: F value 9.8481, Pr is 6.22e-12).   
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+kruskal.test(BDNF_N ~ class, data = data_full)
+adonis(data_full$BDNF_N ~ data_full$class,
+                     method = "euclidean")
+
+```
+
+According kruskal test and permanova between classes exists significant differences. 
+
+
+## Linear model 
+
+Before work with linear model, explored expression level of ERBB4_N, I meet with distribition of this variable. Plot show significant differences between classes. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+ggplot(data_pars, aes(x = class, y = ERBB4_N)) +
+  geom_boxplot() +
+  theme_bw()+
+  xlab("class")+
+  ylab("ERBB4_N") +
+  ggtitle("Plot of distribution ERBB4_N per class")
+
+ggplot(
+  data_pars, aes(x = ERBB4_N, y = class)) +
+  geom_density_ridges_gradient(
+    aes(fill = ..x..), scale = 2, size = 0.3) +
+  scale_fill_gradientn(
+    colours = c("#0D0887FF", "#CC4678FF", "#F0F921FF"),
+    name = "") +
+  ggtitle("Plot of distribution for each class")
+
+```
+
+
+First, i try to fit model with all proteins. 
+
+```{r}
+
+model = lm(ERBB4_N ~ ., data = data_full[4:74])
+summary(model)
+plot(model)
+
+
+```
+
+R-squared of model consist 0.8224, and it is not worst result for model with 476 degrees of freedom. 
+But ploted detected few problems of my models:
+
+For estimate quality of model, I will do some tests. 
+Plot with Residuals vs Fitted showed that our data have some non-linear shape.
+QQPlot showed that distribution of our models is not normal in the high part of the plot.  
+Scale Location showed few problems with heteroskedasticity. For identifying variables which impact this I calc Variance Inflation Factor.
+The spread of standardized residuals change as a function of leverage, and it is additional evidence of heteroskedasticity and non-linearity.
+
+I will try change model with help of automatic method:
+
+```{r, message=FALSE, results='hide'}
+step(model, direction = 'backward')
+best_model <-  lm(formula = ERBB4_N ~ DYRK1A_N + ITSN1_N + NR1_N + pAKT_N + 
+    pBRAF_N + pCREB_N + pELK_N + pJNK_N + PKCA_N + pNR1_N + pNR2B_N + 
+    pRSK_N + AKT_N + BRAF_N + CAMKII_N + CREB_N + ERK_N + GSK3B_N + 
+    RSK_N + MTOR_N + pMTOR_N + TIAM1_N + NUMB_N + P70S6_N + pGSK3B_N + 
+    pPKCG_N + CDK5_N + AcetylH3K9_N + RRP1_N + ARC_N + Tau_N + 
+    GFAP_N + GluR3_N + GluR4_N + IL1B_N + P3525_N + pCASP9_N + 
+    PSD95_N + pGSK3B_Tyr216_N + SYP_N + CaNA_N, data = data_full[4:74])
+```
+```{r}
+summary(best_model)
+```
+R-squared for new model occurs less than for full model: 0.8268
+
+But I think that linear moled can not explore our data and predict it with enougth accuracy by the reason of nature our data. Our observations do not obey a mathematical function that would explain the differences between groups. Our data represent a set of discrete states that can be controlled by the level of expression of the analyzed proteins, and can be regulated by other stimuli. 
+
+## PCA
+
+I will perform principal compounent analysis. 
+
+```{r, fig.align = 'center'}
+
+data_pca <- rda(data_full[4:74], scale = F)
+head(summary(data_pca))
+biplot(data_pca, scaling = "species", display = "species")
+
+```
+When constructing the component analysis, I did not use data scaling, since the values of all variables are scattered within the same order.
+The first 3 PCAs are responsible for about 80% of the variability in the data, which is a good result. In this case, the contribution of 1 PCA is approximately 42%, of the second - 29.3%, and 3 - 9.5%. All further components do not make such a significant contribution to the result: in order to explain 95% of the variability, we need to use 9 components, and 99% - 20.
+I associate these results with a wide rate of reaction in the level of protein expression, as well as the presence of many factors that influence their expression level. 
+
+```{r, fig.align = 'center'}
+
+f_scores <- data.frame(data_full[4:74],
+                       scores(data_pca, display = "sites", choices = c(1, 2, 3), scaling = "sites"))
+
+colors <- c("#2c2c54", "#706fd3", "#34ace0", "#33d9b2", "#ff5252", "#ff793f", "#ffb142", "#ffda78")
+colors <- colors[as.integer(data_full$class)]
+pch = c(15, 16, 17, 18, 19, 15, 16, 17)
+pch <- pch[as.integer(data_full$class)]
+
+scatterplot3d(f_scores[, 1:3], pch = pch, color=colors, angle = -20)
+legend("bottom", legend = levels(data_full$class),
+       col =  c("#2c2c54", "#706fd3", "#34ace0", "#33d9b2", "#ff5252", "#ff793f", "#ffb142", "#ffda79"), 
+       pch = c(15, 16, 17, 18, 19, 15, 16, 17), 
+       inset = -0.25, xpd = TRUE, horiz = T)
+scatterplot3d(f_scores[,1:3], pch = pch, color=colors, angle = -140)
+legend("bottom", legend = levels(data_full$class),
+       col =  c("#2c2c54", "#706fd3", "#34ace0", "#33d9b2", "#ff5252", "#ff793f", "#ffb142", "#ffda79"), 
+       pch = c(15, 16, 17, 18, 19, 15, 16, 17), 
+       inset = -0.25, xpd = TRUE, horiz = TRUE)
+scatterplot3d(f_scores[,1:3], pch = pch, color=colors, angle = 50)
+legend("bottom", legend = levels(data_full$class),
+       col =  c("#2c2c54", "#706fd3", "#34ace0", "#33d9b2", "#ff5252", "#ff793f", "#ffb142", "#ffda79"), 
+       pch = c(15, 16, 17, 18, 19, 15, 16, 17), 
+       inset = -0.25, xpd = TRUE, horiz = TRUE)
+
+
+
+```
+
+3d plots for first 3 compounents showed spatial distribution of our data.  Interesting that this method provide visualise group of observation from c-Cs-s class, chich dramatically istinct from othr observations, but explored by our analysis. 
+
+
+
+
