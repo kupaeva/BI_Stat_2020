@@ -1,0 +1,184 @@
+---
+title: "mini-project"
+author: "Kupaeva DM"
+date: "08 03 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+library(survival)
+library(dplyr)
+library(psych)
+library(ggfortify)
+library(coin)
+library(forcats)
+library(survminer)
+```
+
+In this project I will work with dataset "ovarian" from package "survival".
+
+# 1. Explore data analysis:
+```{r}
+data <- ovarian 
+
+str(data)
+summary(data)
+head(data)
+table(is.na(data))
+
+```
+
+We have 26 observations in 6 variables, all variables have type 'numeric'. Variables fustat, resid.ds, rx, ecog.ps have only 2 values^ 0 or 1, or 1 or 2. It mean that they can be categorial variables. I will change they type, beside of fustat. Fustat must be numeric data for correct using it as right censored data. 
+
+```{r}
+data$resid.ds <-  as.factor(data$resid.ds)
+data$rx <-  as.factor(data$rx)
+data$ecog.ps <-  as.factor(data$ecog.ps)
+ 
+```
+ 
+Let's compare patient groups according to censoring: 
+ 
+```{r}
+describeBy(x = data, group = data$fustat)
+```
+  
+The groups differ in the mean observation time (as expected, in the uncensored groups the observation time is significantly longer than in the censored groups), age (in the uncensored groups the average age is significantly lower than in the censored groups).  
+  
+  
+```{r, warning=FALSE}
+ggplot(stack(data[-2]), aes(x = ind, y = values), labeller(x = a)) +
+  geom_boxplot() +
+  facet_wrap(~ind, nrow = 2, scales = "free") +
+  theme_bw()+
+  xlab("Variables")+
+  ylab("")+
+  ggtitle("Data distribituon and outliers")
+
+qqnorm(data$age, main = 'Normal Q-Q Plot, variable Age')
+
+qqnorm(data$futime, main = 'Normal Q-Q Plot, variable futime')
+
+```
+
+No outliers were found on the boxplots, according to the rafts the distribution is close to normal (as far as possible with such a small number of observations).
+
+```{r}
+shapiro.test(data$age)
+shapiro.test(data$futime)
+```
+
+According to Shapiro test, distribution od data is close to normal. 
+
+# Kaplan-Meier estimator
+
+First, estimate survival function. According to the Kaplan-Meier curve, the survival rate will decline until about 600. After that, it will stabilize at about 50%. As expected, the confidence interval gets wider over time. 
+
+```{r}
+km <- with(data, Surv(futime, fustat))
+km_fit <- survfit(Surv(futime, fustat) ~ 1, data=data)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit)
+
+```
+
+Now let's evaluate how different groups of patients differ in terms of survival: with different types of treatment, ECOG performance status, residual disease present. 
+
+```{r}
+
+
+km_trt_fit <- survfit(Surv(futime, fustat) ~ rx, data=data)
+autoplot(km_trt_fit, main = 'Survival vs type of treatment')
+
+km_ecog_fit <- survfit(Surv(futime, fustat) ~ ecog.ps, data=data)
+autoplot(km_ecog_fit, main = 'Survival vs ECOG performance status')
+
+km_resid_fit <- survfit(Surv(futime, fustat) ~ resid.ds, data=data)
+autoplot(km_resid_fit, main = 'residual disease present')
+
+
+
+```
+
+According to the graphs, the groups with different levels of residual disease differ the most in terms of survival rates. Fully recovered patients have a significantly better prognosis than patients with traces of the disease. The grouping by ECOG performance status has a lesser impact, and the type of treatment has an insignificant effect.
+
+Let's try to assess the survival rate in patients differing in 2 groups of factor. First, let's group them and look at the data by group.
+
+```{r}
+data$hyb_fact <- as.numeric(as.factor(paste(data$ecog.ps, data$resid.ds)))
+
+describeBy(x = data, group = data$hyb_fact)
+
+```
+
+The ecog.ps = 1, resid.ds = No group is the smallest - only 5 patients, but there are no deaths in it. Let's evaluate the survival charts:
+
+```{r}
+km_hyb_fact <- survfit(Surv(futime, fustat) ~ hyb_fact, data=data)
+hyb_plot <- autoplot(km_hyb_fact, conf.int.fill = 'white', 
+         conf.int.alpha = 0.001, stat = c("identity", "reduce"))
+hyb_plot <- hyb_plot + 
+  labs(colour = "Groups") +
+  scale_color_manual(labels = c("ecog.ps = 1, resid.ds = No", 
+                                "ecog.ps = 1, resid.ds = Yes",
+                                "ecog.ps = 2, resid.ds = No",
+                                "ecog.ps = 2, resid.ds = Yes"), 
+                     values = c(1, 2, 3, 4))
+hyb_plot
+```
+
+Due to the fact that there are no deaths in the ecog.ps = 1, resid.ds = No group, the survival rate in this group is assumed to be 100%. There are no significant differences between the rest of the groups.
+
+# Long-rank tests
+
+```{r}
+
+logrank_test(Surv(futime, fustat) ~ rx, data = data)
+logrank_test(Surv(futime, fustat) ~ resid.ds, data = data)
+logrank_test(Surv(futime, fustat) ~ ecog.ps, data = data)
+
+
+```
+
+Long rank test does not allow us to reject the null hypothesis that group survival is related to our factor variables.
+
+```{r}
+data$hyb_fact1 <- as.factor(paste(data$ecog.ps, data$resid.ds))
+data$hyb_fact1 <- fct_collapse(data$hyb_fact1, '1' = c("1 1"), '2' = c("1 2","2 1", "2 2"))
+logrank_test(Surv(futime, fustat) ~ hyb_fact1, data = data)
+
+```
+
+However, it detects a significant difference in survival between the ecog.ps = 1, resid.ds = No group and all other patients.
+
+# Analysis of factors affecting survival
+
+For it I will use cox test:
+
+
+```{r}
+
+cox <- coxph(Surv(futime, fustat) ~ rx + resid.ds + ecog.ps + age, data = data)
+summary(cox)
+
+cox_fit <- survfit(cox)
+autoplot(cox_fit)
+
+aa_fit <- aareg(Surv(futime, fustat) ~ rx + resid.ds + ecog.ps +  age, data = data)
+autoplot(aa_fit)
+
+
+```
+According to Cox's model, the patient's age influences the survival rate most significantly (p-value 0.00777), the influence of other factors is insignificant.
+
+```{r}
+fit.coxph <- coxph(Surv(futime, fustat) ~ rx + resid.ds + ecog.ps + age, data = data)
+ggforest(fit.coxph, data = data)
+
+```
+According to Cox's model, the patient's age influences the survival rate most significantly, the influence of other factors is insignificant.
+
+The Hazard Ratio analysis confirms that of all variables, only age has a significant impact on survival. Despite the fact that some variables have a significant HR value (such as resid.ds - 2.3), they also have a very large confidence interval and p-value, which does not allow trusting the figure obtained. Moreover, for age, the p-value is small enough to take this factor into account as significant.
+
+
+
