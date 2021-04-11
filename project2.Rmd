@@ -1,0 +1,118 @@
+---
+title: "Проект №2"
+date: "30.11.2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(MASS)
+library(dplyr)
+library(ggplot2)
+library(car)
+```
+
+## Data explore
+
+In this project, I will work with data about Boston houses prices from package MASS. Before fit linear models, I explore this dataset.
+
+```{r}
+data <- Boston
+length(which(is.na(data)==T))
+```
+
+Data do not contain NA. Distribution of values of variables I estimate with help of boxplots. 
+In boxplots I see that few variables have high level of outliers, but now I save it because it does not affect my model significantly. If it will be necessary, I will do it later. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+
+ggplot(stack(data), aes(x = ind, y = values), labeller(x = a)) +
+  geom_boxplot() +
+  facet_wrap(~ind, nrow = 2, scales = "free") +
+  theme_bw()+
+  xlab("Variables")+
+  ylab("")+
+  ggtitle("Data distribituon and outliers")
+
+```
+
+
+I transform variables with type 'int' to factor: rad - index of accessibility to radial highways; and chas - Charles River dummy variable (= 1 if tract bounds river; 0 otherwise). 
+After it, I standardize all numeric variables and create a new dataset with standardized data. This data I use for the fit first version of the model. 
+
+```{r}
+data$chas <-  as.factor(data$chas)
+data$rad <-  as.factor(data$rad)
+data_scaled = as.data.frame(scale(data[, -c(4, 9)]))
+data_scaled = cbind(data_scaled, data$rad, data$chas)
+model = lm(medv ~ ., data = data_scaled)
+summary(model)  
+
+```
+
+This model R-squared = 0.7499, F-statistic 72.7 and really small p-value. Analysis of predictors shows that variables Indus and age have a small effect on the model. And I build a model excluding they. 
+
+```{r}
+
+model = lm(medv ~ .- age - indus, data = data_scaled)
+summary(model)  
+
+```
+F-value increased, other parameter does not change. I will use this model for estimate impact of variables to the price of the house. The higher absolute value of statistic has lstat - variable whish show lower status of the population (per cent). 
+
+For estimate quality of model, I will do some tests. 
+Plot with Residuals vs Fitted showed that our data have some non-linear shape.
+QQPlot showed that distribution of our models is not normal in the high part of the plot.  
+Scale Location showed few problems with heteroskedasticity. For identifying variables which impact this I calc Variance Inflation Factor. Test indicate heteroskedasticity in variables tax and nox.  
+The spread of standardized residuals change as a function of leverage, and it is additional evidence of heteroskedasticity and non-linearity.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+plot(model)
+
+```
+
+
+```{r}
+
+vif(model)
+```
+
+In the base of this, I detect problems with nox and tax. Compare with another diagnostic test I am not sure correct using linear models to predict the same values in the base of this dataset. 
+But I try consrtuct model using automated methods of model prediction. Result of this correlate with my previous observations: best fitted model is medv ~ (crim + zn + indus + chas + nox + rm + age + dis + rad + 
+    tax + ptratio + black + lstat) - age - indus - nox - tax . 
+ 
+```{r cars}
+
+drop1(model)
+``` 
+
+The best model has adjusted R-squared:  0.7236. It is not an ideal result, but for getting more significant results we must exclude outliers and include interactions of predictors. 
+
+In the base of this data, I fit model used non-standardized data. This model, in spite of excluding predictors with a high level of heteroskedasticity, has each problem like previous. 
+
+```{r}
+
+best_model = lm(medv ~ (crim + zn + indus + chas + nox + rm + age + dis + rad + 
+    tax + ptratio + black + lstat) - age - indus - nox - tax, data = data)
+summary(best_model)  
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+plot(best_model)
+
+```
+
+A most significant predictor of our model according to model-based in standardized data is lstat. It is a plot which demonstrates the prediction of values medv.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align = 'center'}
+ggplot(data, aes(x = medv, y = lstat)) +
+  geom_smooth(method = lm, color ="red")+
+  theme_bw() +
+  xlab("Median value of owner-occupied homes in USD 1000’s") +
+  ylab("Percentage of lower status of the population") +
+  ggtitle("Dependens between variables medv and lstst")
+
+```
+
+
+
